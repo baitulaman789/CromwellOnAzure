@@ -248,8 +248,7 @@ namespace TesApi.Web
         {
             var nodeAllocationFailed = false;
             TaskState? taskState = null;
-            int? taskExitCode = null;
-            TaskFailureInformation taskFailureInformation = null;
+            TaskExecutionInformation taskExecutionInformation = null;
 
             var jobFilter = new ODATADetailLevel
             {
@@ -289,16 +288,23 @@ namespace TesApi.Web
                     logger.LogError(ex, $"Failed to determine if the node allocation failed for TesTask {tesTaskId} with PoolId {job.ExecutionInformation?.PoolId}.");
                 }
             }
+
             var jobPreparationTaskExecutionInformation = (await batchClient.JobOperations.ListJobPreparationAndReleaseTaskStatus(job.Id).ToListAsync()).FirstOrDefault()?.JobPreparationTaskExecutionInformation;
             var jobPreparationTaskExitCode = jobPreparationTaskExecutionInformation?.ExitCode;
             var jobPreparationTaskState = jobPreparationTaskExecutionInformation?.State;
+            var jobPreparationTaskFailureInformation = jobPreparationTaskExecutionInformation?.FailureInformation;
+            var jobPreparationTaskExecutionResult = jobPreparationTaskExecutionInformation?.Result;
+            var jobPreparationTaskContainerState= jobPreparationTaskExecutionInformation?.ContainerInformation.State;
+            var jobPreparationTaskContainerError= jobPreparationTaskExecutionInformation?.ContainerInformation.Error;
+            var jobPreparationTaskStartTime = jobPreparationTaskExecutionInformation?.StartTime;
+            var jobPreparationTaskEndTime = jobPreparationTaskExecutionInformation?.EndTime;
 
             try
             {
                 var batchTask = await batchClient.JobOperations.GetTaskAsync(job.Id, tesTaskId);
                 taskState = batchTask.State;
-                taskExitCode = batchTask.ExecutionInformation?.ExitCode;
-                taskFailureInformation = batchTask.ExecutionInformation.FailureInformation;
+                taskExecutionInformation = batchTask.ExecutionInformation;
+
             }
             catch (Exception ex)
             {
@@ -307,15 +313,29 @@ namespace TesApi.Web
 
             return new AzureBatchJobAndTaskState
             {
+                MoreThanOneActiveJobFound = false,
+                AttemptNumber = attemptNumber,
+                NodeAllocationFailed = nodeAllocationFailed,
                 JobState = job.State,
+                JobStartTime = job.ExecutionInformation?.StartTime,
+                JobEndTime = job.ExecutionInformation?.EndTime,
+                JobSchedulingError = job.ExecutionInformation?.SchedulingError,
                 JobPreparationTaskState = jobPreparationTaskState,
                 JobPreparationTaskExitCode = jobPreparationTaskExitCode,
+                JobPreparationTaskExecutionResult = jobPreparationTaskExecutionResult,
+                JobPreparationTaskStartTime = jobPreparationTaskStartTime,
+                JobPreparationTaskEndTime = jobPreparationTaskEndTime,
+                JobPreparationTaskFailureInformation = jobPreparationTaskFailureInformation,
+                JobPreparationTaskContainerState = jobPreparationTaskContainerState,
+                JobPreparationTaskContainerError = jobPreparationTaskContainerError,
                 TaskState = taskState,
-                MoreThanOneActiveJobFound = false,
-                NodeAllocationFailed = nodeAllocationFailed,
-                TaskExitCode = taskExitCode,
-                TaskFailureInformation = taskFailureInformation,
-                AttemptNumber = attemptNumber
+                TaskExitCode = taskExecutionInformation?.ExitCode,
+                TaskExecutionResult = taskExecutionInformation?.Result,
+                TaskStartTime = taskExecutionInformation?.StartTime,
+                TaskEndTime = taskExecutionInformation?.EndTime,
+                TaskFailureInformation = taskExecutionInformation?.FailureInformation,
+                TaskContainerState = taskExecutionInformation?.ContainerInformation?.State,
+                TaskContainerError = taskExecutionInformation?.ContainerInformation?.Error
             };
         }
 
@@ -716,15 +736,29 @@ namespace TesApi.Web
 
         public struct AzureBatchJobAndTaskState
         {
-            public JobState? JobState { get; set; }
-            public JobPreparationTaskState? JobPreparationTaskState { get; set; }
-            public int? JobPreparationTaskExitCode { get; set; }
-            public TaskState? TaskState { get; set; }
-            public int? TaskExitCode { get; set; }
-            public TaskFailureInformation TaskFailureInformation { get; set; }
-            public bool NodeAllocationFailed { get; set; }
             public bool MoreThanOneActiveJobFound { get; set; }
             public int AttemptNumber { get; set; }
+            public bool NodeAllocationFailed { get; set; }
+            public JobState? JobState { get; set; }
+            public DateTime? JobStartTime { get; set; }
+            public DateTime? JobEndTime { get; set; }
+            public JobSchedulingError JobSchedulingError { get; set; }
+            public JobPreparationTaskState? JobPreparationTaskState { get; set; }
+            public int? JobPreparationTaskExitCode { get; set; }
+            public TaskExecutionResult? JobPreparationTaskExecutionResult { get; set; }
+            public DateTime? JobPreparationTaskStartTime { get; set; }
+            public DateTime? JobPreparationTaskEndTime { get; set; }
+            public TaskFailureInformation JobPreparationTaskFailureInformation { get; set; }
+            public string JobPreparationTaskContainerState { get; set; }
+            public string JobPreparationTaskContainerError { get; set; }
+            public TaskState? TaskState { get; set; }
+            public int? TaskExitCode { get; set; }
+            public TaskExecutionResult? TaskExecutionResult { get; set; }
+            public DateTime? TaskStartTime { get; set; }
+            public DateTime? TaskEndTime { get; set; }
+            public TaskFailureInformation TaskFailureInformation { get; set; }
+            public string TaskContainerState { get; set; }
+            public string TaskContainerError { get; set; }
         }
 
         public struct AzureBatchNodeCount

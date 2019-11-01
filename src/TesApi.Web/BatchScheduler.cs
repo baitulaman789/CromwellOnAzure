@@ -91,8 +91,8 @@ namespace TesApi.Web
         /// <returns>True if the TES task needs to be persisted.</returns>
         public async Task<bool> ProcessTesTaskAsync(TesTask tesTask)
         {
-            var batchTaskState = await GetBatchTaskStateAsync(tesTask.Id);
-            var tesTaskChanged = await HandleTesTaskTransitionAsync(tesTask, batchTaskState);
+            var (batchTaskState, executionInfo) = await GetBatchTaskStateAsync(tesTask.Id);
+            var tesTaskChanged = await HandleTesTaskTransitionAsync(tesTask, batchTaskState, executionInfo);
             return tesTaskChanged;
         }
 
@@ -121,6 +121,20 @@ namespace TesApi.Web
         private static bool IsCromwellCommandScript(TesInput inputFile)
         {
             return inputFile.Name.Equals("commandScript");
+        }
+
+        /// <summary>
+        /// Writes to <see cref="TesTask"/> system log.
+        /// </summary>
+        /// <param name="tesTask"><see cref="TesTask"/></param>
+        /// <param name="logEntries">List of strings to write to the log.</param>
+        private static void WriteToTesTaskSystemLog(TesTask tesTask, params string[] logEntries)
+        {
+            if (logEntries != null && logEntries.Any(e => !string.IsNullOrEmpty(e)))
+            {
+                tesTask.Logs = tesTask.Logs ?? new List<TesTaskLog>();
+                tesTask.Logs.Add(new TesTaskLog { SystemLogs = logEntries.ToList() });
+            }
         }
 
         /// <summary>
@@ -154,7 +168,7 @@ namespace TesApi.Web
             catch (Exception exc)
             {
                 tesTask.State = TesState.SYSTEMERROREnum;
-                tesTask.Logs = new List<TesTaskLog> { new TesTaskLog { SystemLogs = new List<string> { exc.Message, exc.StackTrace } } };
+                WriteToTesTaskSystemLog(tesTask, exc.Message, exc.StackTrace);
                 logger.LogError(exc, exc.Message);
             }
         }
@@ -260,25 +274,25 @@ namespace TesApi.Web
         /// </summary>
         /// <param name="tesTaskId">The unique ID of the <see cref="TesTask"/></param>
         /// <returns>A higher-level abstraction of the current state of the Azure Batch task</returns>
-        private async Task<BatchTaskState> GetBatchTaskStateAsync(string tesTaskId)
+        private async Task<(BatchTaskState, string)> GetBatchTaskStateAsync(string tesTaskId)
         {
             var batchJobAndTaskState = await azureProxy.GetBatchJobAndTaskStateAsync(tesTaskId);
 
             if (batchJobAndTaskState.MoreThanOneActiveJobFound)
             {
-                return BatchTaskState.MoreThanOneActiveJobFound;
+                return (BatchTaskState.MoreThanOneActiveJobFound, null);
             }
 
             switch (batchJobAndTaskState.JobState)
             {
                 case null:
                 case JobState.Deleting:
-                    return BatchTaskState.JobNotFound; // Treating the deleting job as if it doesn't exist
+                    return (BatchTaskState.JobNotFound, null); // Treating the deleting job as if it doesn't exist
                 case JobState.Active:
                     {
                         if (batchJobAndTaskState.NodeAllocationFailed)
                         {
-                            return BatchTaskState.NodeAllocationFailed;
+                            return (BatchTaskState.NodeAllocationFailed, null);
                         }
 
                         break;
@@ -290,11 +304,6 @@ namespace TesApi.Web
                     throw new Exception($"Found batch job {tesTaskId} in unexpected state: {batchJobAndTaskState.JobState}");
             }
 
-            if (batchJobAndTaskState.TaskFailureInformation != null)
-            {
-                logger.LogError($"Task {tesTaskId} failed. ExitCode: {batchJobAndTaskState.TaskExitCode}, FailureInformation: {JsonConvert.SerializeObject(batchJobAndTaskState.TaskFailureInformation)}");
-            }
-
             switch (batchJobAndTaskState.JobPreparationTaskState)
             {
                 case null:
@@ -303,8 +312,9 @@ namespace TesApi.Web
                 case JobPreparationTaskState.Completed:
                     if (batchJobAndTaskState.JobPreparationTaskExitCode != 0)
                     {
-                        logger.LogError($"Job preparation task for batch job {tesTaskId} failed. ExitCode: {batchJobAndTaskState.JobPreparationTaskExitCode}");
-                        return BatchTaskState.PreparationTaskFailed;
+                        var batchJobInfo = JsonConvert.SerializeObject(batchJobAndTaskState);
+                        logger.LogError($"Job preparation task for batch job {tesTaskId} failed. ExitCode: {batchJobAndTaskState.JobPreparationTaskExitCode}, BatchJobInfo: {batchJobInfo}");
+                        return (BatchTaskState.PreparationTaskFailed, $"ExitCode: {batchJobAndTaskState.JobPreparationTaskExitCode}, BatchJobInfo: {batchJobInfo}");
                     }
 
                     break;
@@ -315,14 +325,24 @@ namespace TesApi.Web
             switch (batchJobAndTaskState.TaskState)
             {
                 case null:
-                    return BatchTaskState.MissingBatchTask;
+                    return (BatchTaskState.MissingBatchTask, null);
                 case TaskState.Active:
                 case TaskState.Preparing:
-                    return BatchTaskState.Initializing;
+                    return (BatchTaskState.Initializing, null);
                 case TaskState.Running:
-                    return BatchTaskState.Running;
+                    return (BatchTaskState.Running, null);
                 case TaskState.Completed:
-                    return batchJobAndTaskState.TaskExitCode == 0 && batchJobAndTaskState.TaskFailureInformation == null ? BatchTaskState.CompletedSuccessfully : BatchTaskState.CompletedWithErrors;
+                    var batchJobInfo = JsonConvert.SerializeObject(batchJobAndTaskState);
+
+                    if (batchJobAndTaskState.TaskExitCode == 0 && batchJobAndTaskState.TaskFailureInformation == null)
+                    {
+                        return (BatchTaskState.CompletedSuccessfully, batchJobInfo);
+                    }
+                    else
+                    {
+                        logger.LogError($"Task {tesTaskId} failed. ExitCode: {batchJobAndTaskState.TaskExitCode}, BatchJobInfo: {batchJobInfo}");
+                        return (BatchTaskState.CompletedWithErrors, $"ExitCode: {batchJobAndTaskState.TaskExitCode}, BatchJobInfo: {batchJobInfo}"); 
+                    }
                 default:
                     throw new Exception($"Found batch task {tesTaskId} in unexpected state: {batchJobAndTaskState.TaskState}");
             }
@@ -333,8 +353,9 @@ namespace TesApi.Web
         /// </summary>
         /// <param name="tesTask">TES task</param>
         /// <param name="batchTaskState">Current Azure Batch task state</param>
+        /// <param name="executionInfo">Batch job execution info</param>
         /// <returns>True if the TES task was changed.</returns>
-        private async Task<bool> HandleTesTaskTransitionAsync(TesTask tesTask, BatchTaskState batchTaskState)
+        private async Task<bool> HandleTesTaskTransitionAsync(TesTask tesTask, BatchTaskState batchTaskState, string executionInfo)
         {
             var tesTaskChanged = false;
 
@@ -346,12 +367,24 @@ namespace TesApi.Web
                 if (mapItem.Action != null)
                 {
                     await mapItem.Action(tesTask);
+
+                    if (executionInfo != null)
+                    {
+                        WriteToTesTaskSystemLog(tesTask, executionInfo);
+                    }
+
                     tesTaskChanged = true;
                 }
 
                 if (mapItem.NewTesTaskState != null && mapItem.NewTesTaskState != tesTask.State)
                 {
                     tesTask.State = mapItem.NewTesTaskState.Value;
+
+                    if (executionInfo != null)
+                    {
+                        WriteToTesTaskSystemLog(tesTask, executionInfo);
+                    }
+
                     tesTaskChanged = true;
                 }
             }
