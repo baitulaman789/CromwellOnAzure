@@ -283,17 +283,17 @@ namespace TesApi.Web
                     SelectClause = "*"
                 };
 
-                var pool = batchClient.PoolOperations.ListPools(poolFilter).FirstOrDefault();
+                var pool = (await batchClient.PoolOperations.ListPools(poolFilter).ToListAsync()).FirstOrDefault();
 
                 if(pool != null)
                 {
                     nodeAllocationFailed = pool.ResizeErrors?.Count > 0;
 
-                    var node = pool.ListComputeNodes().FirstOrDefault();
+                    var node = (await pool.ListComputeNodes().ToListAsync()).FirstOrDefault();
 
                     if(node != null)
                     {
-                        nodeDiskFull = node.Errors?.FirstOrDefault()?.Code.Equals("DiskFull", StringComparison.OrdinalIgnoreCase) ?? false;
+                        nodeDiskFull = node.Errors?.FirstOrDefault()?.Code?.Equals("DiskFull", StringComparison.OrdinalIgnoreCase) ?? false;
                     }
                 }
             }
