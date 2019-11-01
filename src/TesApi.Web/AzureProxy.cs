@@ -247,6 +247,7 @@ namespace TesApi.Web
         public async Task<AzureBatchJobAndTaskState> GetBatchJobAndTaskStateAsync(string tesTaskId)
         {
             var nodeAllocationFailed = false;
+            var nodeDiskFull = false;
             TaskState? taskState = null;
             TaskExecutionInformation taskExecutionInformation = null;
 
@@ -274,18 +275,26 @@ namespace TesApi.Web
             var job = lastJobInfo.Job;
             var attemptNumber = lastJobInfo.AttemptNumber;
 
-            if (job.State == JobState.Active)
+            if (job.State == JobState.Active && job.ExecutionInformation?.PoolId != null)
             {
-                try
+                var poolFilter = new ODATADetailLevel
                 {
-                    nodeAllocationFailed = job.ExecutionInformation?.PoolId != null
-                        && (await batchClient.PoolOperations.GetPoolAsync(job.ExecutionInformation.PoolId)).ResizeErrors?.Count > 0;
-                }
-                catch (Exception ex)
+                    FilterClause = $"id eq '{job.ExecutionInformation.PoolId}'",
+                    SelectClause = "*"
+                };
+
+                var pool = batchClient.PoolOperations.ListPools(poolFilter).FirstOrDefault();
+
+                if(pool != null)
                 {
-                    // assume that node allocation failed
-                    nodeAllocationFailed = true;
-                    logger.LogError(ex, $"Failed to determine if the node allocation failed for TesTask {tesTaskId} with PoolId {job.ExecutionInformation?.PoolId}.");
+                    nodeAllocationFailed = pool.ResizeErrors?.Count > 0;
+
+                    var node = pool.ListComputeNodes().FirstOrDefault();
+
+                    if(node != null)
+                    {
+                        nodeDiskFull = node.Errors?.FirstOrDefault()?.Code.Equals("DiskFull", StringComparison.OrdinalIgnoreCase) ?? false;
+                    }
                 }
             }
 
@@ -316,6 +325,7 @@ namespace TesApi.Web
                 MoreThanOneActiveJobFound = false,
                 AttemptNumber = attemptNumber,
                 NodeAllocationFailed = nodeAllocationFailed,
+                NodeDiskFull = nodeDiskFull,
                 JobState = job.State,
                 JobStartTime = job.ExecutionInformation?.StartTime,
                 JobEndTime = job.ExecutionInformation?.EndTime,
@@ -739,6 +749,7 @@ namespace TesApi.Web
             public bool MoreThanOneActiveJobFound { get; set; }
             public int AttemptNumber { get; set; }
             public bool NodeAllocationFailed { get; set; }
+            public bool NodeDiskFull { get; set; }
             public JobState? JobState { get; set; }
             public DateTime? JobStartTime { get; set; }
             public DateTime? JobEndTime { get; set; }

@@ -158,6 +158,7 @@ namespace TesApi.Tests
             Assert.AreEqual(TesState.SYSTEMERROREnum, await GetNewTesTaskStateAsync(TesState.RUNNINGEnum, BatchJobAndTaskStates.TaskNotFound));
             Assert.AreEqual(TesState.SYSTEMERROREnum, await GetNewTesTaskStateAsync(TesState.RUNNINGEnum, BatchJobAndTaskStates.MoreThanOneJobFound));
             Assert.AreEqual(TesState.EXECUTORERROREnum, await GetNewTesTaskStateAsync(TesState.RUNNINGEnum, BatchJobAndTaskStates.PreparationTaskFailed));
+            Assert.AreEqual(TesState.EXECUTORERROREnum, await GetNewTesTaskStateAsync(TesState.RUNNINGEnum, BatchJobAndTaskStates.NodeDiskFull));
         }
 
         [TestMethod]
@@ -172,6 +173,7 @@ namespace TesApi.Tests
             Assert.AreEqual(TesState.SYSTEMERROREnum, await GetNewTesTaskStateAsync(TesState.INITIALIZINGEnum, BatchJobAndTaskStates.TaskNotFound));
             Assert.AreEqual(TesState.SYSTEMERROREnum, await GetNewTesTaskStateAsync(TesState.INITIALIZINGEnum, BatchJobAndTaskStates.MoreThanOneJobFound));
             Assert.AreEqual(TesState.EXECUTORERROREnum, await GetNewTesTaskStateAsync(TesState.INITIALIZINGEnum, BatchJobAndTaskStates.PreparationTaskFailed));
+            Assert.AreEqual(TesState.EXECUTORERROREnum, await GetNewTesTaskStateAsync(TesState.INITIALIZINGEnum, BatchJobAndTaskStates.NodeDiskFull));
             Assert.AreEqual(TesState.QUEUEDEnum, await GetNewTesTaskStateAsync(TesState.INITIALIZINGEnum, BatchJobAndTaskStates.NodeAllocationFailed));
         }
 
@@ -185,6 +187,7 @@ namespace TesApi.Tests
             Assert.AreEqual(TesState.EXECUTORERROREnum, await GetNewTesTaskStateAsync(TesState.QUEUEDEnum, BatchJobAndTaskStates.TaskFailed));
             Assert.AreEqual(TesState.SYSTEMERROREnum, await GetNewTesTaskStateAsync(TesState.QUEUEDEnum, BatchJobAndTaskStates.MoreThanOneJobFound));
             Assert.AreEqual(TesState.EXECUTORERROREnum, await GetNewTesTaskStateAsync(TesState.QUEUEDEnum, BatchJobAndTaskStates.PreparationTaskFailed));
+            Assert.AreEqual(TesState.EXECUTORERROREnum, await GetNewTesTaskStateAsync(TesState.QUEUEDEnum, BatchJobAndTaskStates.NodeDiskFull));
             Assert.AreEqual(TesState.QUEUEDEnum, await GetNewTesTaskStateAsync(TesState.QUEUEDEnum, BatchJobAndTaskStates.TaskNotFound));
         }
 
@@ -458,6 +461,7 @@ namespace TesApi.Tests
             public static AzureProxy.AzureBatchJobAndTaskState MoreThanOneJobFound => new AzureProxy.AzureBatchJobAndTaskState { MoreThanOneActiveJobFound = true };
             public static AzureProxy.AzureBatchJobAndTaskState PreparationTaskFailed => new AzureProxy.AzureBatchJobAndTaskState { JobState = JobState.Active, JobPreparationTaskState = JobPreparationTaskState.Completed, JobPreparationTaskExitCode = -1 };
             public static AzureProxy.AzureBatchJobAndTaskState NodeAllocationFailed => new AzureProxy.AzureBatchJobAndTaskState { JobState = JobState.Active, NodeAllocationFailed = true };
+            public static AzureProxy.AzureBatchJobAndTaskState NodeDiskFull => new AzureProxy.AzureBatchJobAndTaskState { JobState = JobState.Active, NodeDiskFull = true };
         }
 
         private class AzureProxyReturnValues

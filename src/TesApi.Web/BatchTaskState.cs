@@ -52,6 +52,11 @@ namespace TesApi.Web
         NodeAllocationFailed,
 
         /// <summary>
+        /// Azure Batch machine disk was too small for the task.
+        /// </summary>
+        NodeDiskFull,
+
+        /// <summary>
         /// Azure Batch pre-empted the execution of this task while running on a low-priority node
         /// </summary>
         NodePreempted,

@@ -78,6 +78,7 @@ namespace TesApi.Web
                 new TesTaskStateTransition(tesStateIsQueuedInitializingOrRunning, BatchTaskState.CompletedSuccessfully, TesState.COMPLETEEnum),
                 new TesTaskStateTransition(tesStateIsQueuedInitializingOrRunning, BatchTaskState.CompletedWithErrors, TesState.EXECUTORERROREnum),
                 new TesTaskStateTransition(tesStateIsQueuedInitializingOrRunning, BatchTaskState.PreparationTaskFailed, tesTask => this.azureProxy.DeleteBatchJobAsync(tesTask.Id), TesState.EXECUTORERROREnum),
+                new TesTaskStateTransition(tesStateIsQueuedInitializingOrRunning, BatchTaskState.NodeDiskFull, tesTask => this.azureProxy.DeleteBatchJobAsync(tesTask.Id), TesState.EXECUTORERROREnum),
                 new TesTaskStateTransition(tesStateIsInitializingOrRunning, BatchTaskState.JobNotFound, TesState.SYSTEMERROREnum),
                 new TesTaskStateTransition(tesStateIsInitializingOrRunning, BatchTaskState.MissingBatchTask, tesTask => this.azureProxy.DeleteBatchJobAsync(tesTask.Id), TesState.SYSTEMERROREnum),
                 new TesTaskStateTransition(tesStateIsInitializingOrRunning, BatchTaskState.NodePreempted, tesTask => this.azureProxy.DeleteBatchJobAsync(tesTask.Id), TesState.QUEUEDEnum) // TODO: Implement preemption detection
@@ -124,20 +125,6 @@ namespace TesApi.Web
         }
 
         /// <summary>
-        /// Writes to <see cref="TesTask"/> system log.
-        /// </summary>
-        /// <param name="tesTask"><see cref="TesTask"/></param>
-        /// <param name="logEntries">List of strings to write to the log.</param>
-        private static void WriteToTesTaskSystemLog(TesTask tesTask, params string[] logEntries)
-        {
-            if (logEntries != null && logEntries.Any(e => !string.IsNullOrEmpty(e)))
-            {
-                tesTask.Logs = tesTask.Logs ?? new List<TesTaskLog>();
-                tesTask.Logs.Add(new TesTaskLog { SystemLogs = logEntries.ToList() });
-            }
-        }
-
-        /// <summary>
         /// Adds a new Azure Batch pool/job/task for the given <see cref="TesTask"/>
         /// </summary>
         /// <param name="tesTask">The <see cref="TesTask"/> to schedule on Azure Batch</param>
@@ -168,7 +155,7 @@ namespace TesApi.Web
             catch (Exception exc)
             {
                 tesTask.State = TesState.SYSTEMERROREnum;
-                WriteToTesTaskSystemLog(tesTask, exc.Message, exc.StackTrace);
+                tesTask.WriteToSystemLog(exc.Message, exc.StackTrace);
                 logger.LogError(exc, exc.Message);
             }
         }
@@ -295,6 +282,11 @@ namespace TesApi.Web
                             return (BatchTaskState.NodeAllocationFailed, null);
                         }
 
+                        if (batchJobAndTaskState.NodeDiskFull)
+                        {
+                            return (BatchTaskState.NodeDiskFull, "There is not enough disk space on the VM that was selected for the task.");
+                        }
+
                         break;
                     }
                 case JobState.Terminating:
@@ -370,7 +362,7 @@ namespace TesApi.Web
 
                     if (executionInfo != null)
                     {
-                        WriteToTesTaskSystemLog(tesTask, executionInfo);
+                        tesTask.WriteToSystemLog(executionInfo);
                     }
 
                     tesTaskChanged = true;
@@ -382,7 +374,7 @@ namespace TesApi.Web
 
                     if (executionInfo != null)
                     {
-                        WriteToTesTaskSystemLog(tesTask, executionInfo);
+                        tesTask.WriteToSystemLog(executionInfo);
                     }
 
                     tesTaskChanged = true;
